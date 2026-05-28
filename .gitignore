@@ -185,3 +185,6 @@ mu_glioma_post_output/
 
 # results
 sailor_eval_17/
+
+# Training logs
+lightning_logs/

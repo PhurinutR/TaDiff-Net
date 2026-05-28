@@ -73,7 +73,7 @@ class TrainMuGliomaPostConfig:
     warmup_steps: int = 1000
     max_steps: int = 100_000
     max_epochs: int = -1
-    batch_size: int = 16
+    batch_size: int = 8
     num_workers: int = 31
     grad_clip: float = 1.5
     accumulate_grad_batches: int = 2

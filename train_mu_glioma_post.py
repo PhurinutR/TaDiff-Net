@@ -14,6 +14,12 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, Dataset
 
 from config.train_mu_glioma_post_config import TrainMuGliomaPostConfig
+from eval_t2f_generation.ssim import (
+    _independent_minmax_to_01,
+    _load_patient_arrays,
+    _predict_slice_flair,
+    _source_indices_for_last_target,
+)
 from src.tadiff_model import Tadiff_model
 
 
@@ -223,6 +229,87 @@ class TadiffPaperModel(Tadiff_model):
         return {"loss": loss, "mse": mse, "dice_seg": dice_seg}
 
 
+class PredictionPreviewCallback(pl.Callback):
+    """
+    Periodically run one inference preview for a fixed patient and log to TensorBoard.
+    """
+
+    def __init__(self, cfg: TrainMuGliomaPostConfig):
+        super().__init__()
+        self.cfg = cfg
+        self._loaded = False
+        self._image_t3d: np.ndarray | None = None
+        self._days: np.ndarray | None = None
+        self._treat: np.ndarray | None = None
+        self._seq_idx: List[int] | None = None
+        self._slice_idx: int | None = None
+
+    def _lazy_load(self) -> None:
+        if self._loaded:
+            return
+        data_root = Path(self.cfg.data_root)
+        pid = self.cfg.preview_patient_id
+        image_t3d, days, treat = _load_patient_arrays(data_root, pid)
+        target_idx = image_t3d.shape[0] - 1
+        src_idx = _source_indices_for_last_target(image_t3d.shape[0])
+        seq_idx = src_idx + [target_idx]
+        d = image_t3d.shape[-1]
+        mid = d // 2
+        self._image_t3d = image_t3d
+        self._days = days
+        self._treat = treat
+        self._seq_idx = seq_idx
+        self._slice_idx = mid
+        self._loaded = True
+
+    @torch.no_grad()
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        if self.cfg.preview_interval_steps <= 0:
+            return
+        step = int(trainer.global_step)
+        if step <= 0 or (step % int(self.cfg.preview_interval_steps)) != 0:
+            return
+        if trainer.logger is None or not hasattr(trainer.logger, "experiment"):
+            return
+
+        try:
+            self._lazy_load()
+            assert self._image_t3d is not None
+            assert self._days is not None
+            assert self._treat is not None
+            assert self._seq_idx is not None
+            assert self._slice_idx is not None
+
+            pred_flair, gt_flair = _predict_slice_flair(
+                model=pl_module,
+                image_t3d=self._image_t3d,
+                days=self._days,
+                treat=self._treat,
+                seq_idx=self._seq_idx,
+                slice_idx=self._slice_idx,
+                image_size=self.cfg.image_size,
+                diffusion_steps=self.cfg.max_T,
+                num_samples=1,
+                device=str(pl_module.device),
+            )
+            pred_01, gt_01 = _independent_minmax_to_01(
+                pred_flair.astype(np.float32), gt_flair.astype(np.float32)
+            )
+            diff_01 = np.abs(pred_01 - gt_01).astype(np.float32)
+            panel = np.concatenate([gt_01, pred_01, diff_01], axis=1)  # [H, 3W]
+            panel = np.clip(panel, 0.0, 1.0)
+            panel_t = torch.from_numpy(panel).unsqueeze(0)  # [1,H,W]
+
+            trainer.logger.experiment.add_image(
+                f"preview/{self.cfg.preview_patient_id}_flair_gt_pred_diff",
+                panel_t,
+                global_step=step,
+            )
+        except Exception as e:
+            # Keep training running even if preview fails.
+            print(f"[PreviewCallback] skipped at step {step}: {e}")
+
+
 def _make_trainer(cfg: TrainMuGliomaPostConfig) -> pl.Trainer:
     logger = TensorBoardLogger(save_dir=cfg.logdir, name="", default_hp_metric=False)
 
@@ -244,7 +331,7 @@ def _make_trainer(cfg: TrainMuGliomaPostConfig) -> pl.Trainer:
         accelerator=accelerator,
         devices=devices,
         logger=logger,
-        callbacks=[ckpt_cb],
+        callbacks=[ckpt_cb, PredictionPreviewCallback(cfg)],
         precision=cfg.precision,
         max_steps=cfg.max_steps if cfg.max_steps > 0 else -1,
         max_epochs=cfg.max_epochs if cfg.max_epochs > 0 else -1,
