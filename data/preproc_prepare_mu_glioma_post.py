@@ -358,7 +358,14 @@ def _collect_patient_arrays(
     if not session_dirs:
         raise RuntimeError(f"{patient_dir.name}: no timepoint directories found.")
 
-    all_modalities: List[np.ndarray] = []
+    # IMPORTANT: match SAILOR ordering in preproc_prepare_data.py:
+    # modality-major, then timepoint (all T1 sessions, then all T1c, FLAIR, T2).
+    by_modality: Dict[str, List[np.ndarray]] = {
+        "t1": [],
+        "t1c": [],
+        "flair": [],
+        "t2": [],
+    }
     labels: List[np.ndarray] = []
     abs_days: List[int] = []
 
@@ -387,12 +394,11 @@ def _collect_patient_arrays(
             print(f"[Skip session] {patient_dir.name}/{sdir.name}: no day in clinical xlsx")
             continue
 
-        imgs = [
-            _read_nii(t1, normalize_nonzero=True, clip_percent=clip_percent),
-            _read_nii(t1c, normalize_nonzero=True, clip_percent=clip_percent),
-            _read_nii(flair, normalize_nonzero=True, clip_percent=clip_percent),
-            _read_nii(t2, normalize_nonzero=True, clip_percent=clip_percent),
-        ]
+        img_t1 = _read_nii(t1, normalize_nonzero=True, clip_percent=clip_percent)
+        img_t1c = _read_nii(t1c, normalize_nonzero=True, clip_percent=clip_percent)
+        img_flair = _read_nii(flair, normalize_nonzero=True, clip_percent=clip_percent)
+        img_t2 = _read_nii(t2, normalize_nonzero=True, clip_percent=clip_percent)
+        imgs = [img_t1, img_t1c, img_flair, img_t2]
         m = _read_nii(mask, normalize_nonzero=False)
 
         shape0 = imgs[0].shape
@@ -405,14 +411,20 @@ def _collect_patient_arrays(
         merged = np.zeros_like(m, dtype=np.int8)
         merged[m > 0] = ENHANCING
 
-        all_modalities.extend(imgs)
+        by_modality["t1"].append(img_t1)
+        by_modality["t1c"].append(img_t1c)
+        by_modality["flair"].append(img_flair)
+        by_modality["t2"].append(img_t2)
         labels.append(merged)
         abs_days.append(int(day))
 
     if not labels:
         raise RuntimeError(f"{patient_dir.name}: no valid sessions after checks.")
 
-    image = np.stack(all_modalities, axis=0).astype(np.float32)  # (4*T,H,W,D)
+    all_modalities = (
+        by_modality["t1"] + by_modality["t1c"] + by_modality["flair"] + by_modality["t2"]
+    )
+    image = np.stack(all_modalities, axis=0).astype(np.float32)  # (4*T,H,W,D), modality-major
     label = np.stack(labels, axis=0).astype(np.int8)             # (T,H,W,D)
 
     first_day = abs_days[0]
