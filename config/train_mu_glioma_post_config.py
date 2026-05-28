@@ -52,29 +52,29 @@ class TrainMuGliomaPostConfig:
     network: str = "TaDiff_Net"
     in_channels: int = 13
     out_channels: int = 7
-    model_channels: int = 64
-    num_res_blocks: int = 2
+    model_channels: int = 32
+    num_res_blocks: int = 1
     channel_mult: Tuple[int, ...] = (1, 2, 3, 4)
     attention_resolutions: Tuple[int, ...] = (8, 4)
-    num_heads: int = 8
+    num_heads: int = 1
     num_classes: int = 81
 
     # Diffusion / loss
-    max_T: int = 600
+    max_T: int = 1000
     ddpm_schedule: str = "linear"
-    aux_loss_w: float = 0.01
+    aux_loss_w: float = 0.02
 
     # ------------------------------------------------------------------
     # Optimization
     # ------------------------------------------------------------------
     opt: str = "adamw"
-    lr: float = 2.5e-4
+    lr: float = 1e-4
     weight_decay: float = 3e-5
     warmup_steps: int = 1000
-    max_steps: int = 5_000_000
+    max_steps: int = 100_000
     max_epochs: int = -1
-    batch_size: int = 32
-    num_workers: int = 8
+    batch_size: int = 16
+    num_workers: int = 31
     grad_clip: float = 1.5
     accumulate_grad_batches: int = 2
     precision: int = 32
