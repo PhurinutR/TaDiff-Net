@@ -441,6 +441,7 @@ def run_eval(
         )
 
     mean_ssim = float(np.mean([r["ssim_flair_3slice"] for r in rows])) if rows else float("nan")
+    std_error = float(np.std([r["ssim_flair_3slice"] for r in rows]) / np.sqrt(len(rows)))
     out = {
         "num_patients": len(rows),
         "num_inference_runs": total_runs,
@@ -448,11 +449,13 @@ def run_eval(
         "num_samples_per_slice": int(num_samples),
         "mean_ssim_flair_3slice": mean_ssim,
         "patients": rows,
+        "std_error": std_error,
     }
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\nSaved results to: {output_json}")
     print(f"Patients: {len(rows)} | Inference runs: {total_runs} | Mean SSIM: {mean_ssim:.6f}")
+    print(f"Standard error: {std_error:.6f}")
 
 
 def parse_args() -> argparse.Namespace:

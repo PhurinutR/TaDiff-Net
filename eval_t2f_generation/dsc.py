@@ -536,6 +536,7 @@ def run_eval(
     mean_dsc = (
         float(np.mean([r["dsc_flair_3slice_patient_avg"] for r in rows])) if rows else float("nan")
     )
+    std_error = float(np.std([r["dsc_flair_3slice_patient_avg"] for r in rows]) / np.sqrt(len(rows)))
     out = {
         "num_patients": len(rows),
         "num_inference_runs": total_runs,
@@ -545,11 +546,13 @@ def run_eval(
         "seg_threshold": float(seg_threshold),
         "mean_dsc_flair_3slice_patient_avg": mean_dsc,
         "patients": rows,
+        "std_error": std_error,
     }
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\nSaved results to: {output_json}")
     print(f"Patients: {len(rows)} | Inference runs: {total_runs} | Mean DSC: {mean_dsc:.6f}")
+    print(f"Standard error: {std_error:.6f}")
 
 
 def parse_args() -> argparse.Namespace:

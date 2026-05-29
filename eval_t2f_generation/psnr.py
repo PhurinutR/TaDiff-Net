@@ -354,6 +354,7 @@ def run_eval(
         )
 
     mean_psnr = float(np.mean([r["psnr_flair_3slice"] for r in rows])) if rows else float("nan")
+    std_error = float(np.std([r["psnr_flair_3slice"] for r in rows]) / np.sqrt(len(rows)))
     out = {
         "num_patients": len(rows),
         "num_inference_runs": total_runs,
@@ -361,11 +362,13 @@ def run_eval(
         "num_samples_per_slice": int(num_samples),
         "mean_psnr_flair_3slice": mean_psnr,
         "patients": rows,
+        "std_error": std_error,
     }
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\nSaved results to: {output_json}")
     print(f"Patients: {len(rows)} | Inference runs: {total_runs} | Mean PSNR: {mean_psnr:.6f}")
+    print(f"Standard error: {std_error:.6f}")
 
 
 def parse_args() -> argparse.Namespace:
